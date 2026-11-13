@@ -1,0 +1,55 @@
+name: Gerar app Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "www/**"
+      - "desktop/**"
+      - ".github/workflows/build-windows.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Copiar o app para o projeto do Windows
+        shell: bash
+        run: |
+          mkdir -p desktop/app
+          cp www/index.html desktop/app/index.html
+
+      - name: Instalar dependências
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Gerar o instalador
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --win --x64 --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aspect-windows
+          path: desktop/dist/Aspect-Setup.exe
+
+      - name: Publicar na aba Releases
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows --yes --cleanup-tag || true
+          gh release create windows desktop/dist/Aspect-Setup.exe \
+            --title "Aspect para Windows" \
+            --notes "Instalador para Windows (build ${{ github.run_number }})." \
+            --latest=false
