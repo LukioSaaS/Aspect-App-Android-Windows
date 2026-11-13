@@ -1,0 +1,31 @@
+{
+  "name": "aspect-desktop",
+  "version": "1.0.0",
+  "description": "Aspect para Windows",
+  "main": "main.js",
+  "author": "Aspect",
+  "private": true,
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.aspect.player",
+    "productName": "Aspect",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "app/**/*", "build/icon.png"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aspect",
+      "artifactName": "Aspect-Setup.${ext}"
+    }
+  }
+}

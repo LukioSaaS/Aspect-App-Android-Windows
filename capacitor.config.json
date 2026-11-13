@@ -1,0 +1,13 @@
+{
+  "appId": "app.aspect.player",
+  "appName": "Aspect",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#050505"
+  }
+}

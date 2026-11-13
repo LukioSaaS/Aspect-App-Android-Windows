@@ -1,0 +1,16 @@
+{
+  "name": "aspect-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aspect - app Android (celular e Android TV)",
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/screen-orientation": "^6.0.0",
+    "@capacitor/app": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0"
+  }
+}
