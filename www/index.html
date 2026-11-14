@@ -364,6 +364,12 @@ html[data-input="key"] .card:focus .ci::after, html[data-layout="tv"] .card:focu
 .card.ch .ci { padding-top: 56.25%; background: radial-gradient(120% 140% at 25% 15%, var(--bg-4), var(--bg-2)); }
 .card.ch .ci img.logo { object-fit: contain; padding: 13% 21%; }
 .card.ch .cf { background: none; align-items: center; justify-content: center; text-align: center; }
+.card.gm .ci { background: radial-gradient(120% 140% at 50% 0%, var(--bg-4), var(--bg-2)); }
+.gm-in { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: .55rem; padding: 1.1rem .6rem .5rem; }
+.gm-l { height: 46%; width: auto; max-width: 30%; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
+.gm-n { display: flex; align-items: center; justify-content: center; height: 2.4rem; min-width: 2.4rem; font-weight: 800; font-size: .8rem; color: var(--fg-3); }
+.gm-sc { font-weight: 800; font-size: 1.15rem; letter-spacing: .04em; white-space: nowrap; }
+.gm-min { position: absolute; top: .45rem; right: .45rem; z-index: 2; background: rgba(0,0,0,.6); color: #fff; font-size: .62rem; font-weight: 700; padding: .14rem .4rem; border-radius: .22rem; }
 .lv-badge { position: absolute; top: .45rem; left: .45rem; z-index: 2; background: var(--live); color: #fff; font-size: .58rem; font-weight: 800; letter-spacing: .08em; padding: .14rem .4rem; border-radius: .22rem; }
 .epg-t.none { color: var(--fg-4); }
 .card.top { width: calc(var(--card-w) * 1.6); padding-left: calc(var(--card-w) * .6); }
@@ -1279,6 +1285,12 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     GAMES_ONLY_FOOTBALL: true,
     //! JOGOS HOJE: quantos canais diferentes podem mostrar o MESMO jogo (1 = cada jogo aparece uma vez só)
     GAMES_PER_GAME: 3,
+    //! JOGOS HOJE: true = usa a API de jogos ao vivo (placar, escudos e minuto) e liga cada jogo ao canal que está passando
+    GAMES_API: true,
+    //! JOGOS HOJE: de quanto em quanto tempo (segundos) a API é consultada de novo
+    GAMES_REFRESH: 30,
+    //! JOGOS HOJE: campeonatos consultados na API (códigos da ESPN). Deixe [] para usar a lista padrão do app
+    GAMES_LEAGUES: [],
     //! Biblioteca propria de legendas e audios extras (arquivo .json). Veja o LEIA-ME.
     //! Exemplo: 'https://meu-site.pages.dev/extras.json'
     EXTRAS_URL: "",
@@ -4476,6 +4488,177 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
   function moreCard(k, cat, label2) {
     return '<div class="card more" data-f tabindex="-1" data-act="more" data-k="' + k + '" data-cat="' + esc(cat) + '" aria-label="Ver tudo de ' + esc(label2) + '"><div class="ci"><span class="more-i">' + ic("grid4") + "<b>Ver tudo</b></span></div></div>";
   }
+  // ---------- JOGOS HOJE (API): jogos de futebol acontecendo agora, com escudos/placar, ligados ao canal que está passando ----------
+  var GameAPI = {
+    BASE: "https://site.api.espn.com/apis/site/v2/sports/soccer/",
+    LEAGUES: ["bra.1", "bra.2", "bra.copa_do_brazil", "conmebol.libertadores", "conmebol.sudamericana", "conmebol.recopa", "bra.camp.paulista", "bra.camp.carioca", "bra.camp.mineiro", "bra.camp.gaucho", "uefa.champions", "uefa.europa", "uefa.europa.conf", "eng.1", "eng.fa", "eng.league_cup", "esp.1", "esp.copa_del_rey", "ita.1", "ger.1", "fra.1", "por.1", "ned.1", "arg.1", "mex.1", "usa.1", "fifa.world", "fifa.cwc", "fifa.friendly", "fifa.worldq.conmebol", "fifa.worldq.uefa", "conmebol.america", "uefa.euro", "uefa.nations"],
+    LG_PT: { "bra.1": "Brasileirão", "bra.2": "Série B", "bra.copa_do_brazil": "Copa do Brasil", "conmebol.libertadores": "Libertadores", "conmebol.sudamericana": "Sul-Americana", "conmebol.recopa": "Recopa", "bra.camp.paulista": "Paulistão", "bra.camp.carioca": "Cariocão", "bra.camp.mineiro": "Mineiro", "bra.camp.gaucho": "Gauchão", "uefa.champions": "Champions League", "uefa.europa": "Europa League", "uefa.europa.conf": "Conference League", "eng.1": "Premier League", "eng.fa": "FA Cup", "eng.league_cup": "Copa da Liga", "esp.1": "La Liga", "esp.copa_del_rey": "Copa del Rey", "ita.1": "Série A (ITA)", "ger.1": "Bundesliga", "fra.1": "Ligue 1", "por.1": "Liga Portugal", "ned.1": "Eredivisie", "arg.1": "Liga Argentina", "mex.1": "Liga MX", "usa.1": "MLS", "fifa.world": "Copa do Mundo", "fifa.cwc": "Mundial de Clubes", "fifa.friendly": "Amistoso", "fifa.worldq.conmebol": "Eliminatórias", "fifa.worldq.uefa": "Eliminatórias", "conmebol.america": "Copa América", "uefa.euro": "Eurocopa", "uefa.nations": "Liga das Nações" },
+    // nomes que a programação usa e a API não (ou vice-versa)
+    ALIAS: { "manchester united": ["man united", "manchester united"], "manchester city": ["man city", "manchester city"], "bayern munich": ["bayern", "bayern de munique"], "inter milan": ["inter de milao", "inter milan", "internazionale"], "ac milan": ["milan", "ac milan"], "paris saint germain": ["psg", "paris saint germain", "paris sg"], "atletico madrid": ["atletico de madrid", "atletico madrid"], "athletico paranaense": ["athletico", "athletico pr", "atletico pr", "athletico paranaense"], "atletico mineiro": ["atletico mg", "atletico mineiro", "galo"], "atletico goianiense": ["atletico go"], "vasco da gama": ["vasco"], "red bull bragantino": ["bragantino", "rb bragantino"], "sao paulo": ["sao paulo", "spfc"], "borussia dortmund": ["dortmund", "borussia dortmund"], "tottenham hotspur": ["tottenham"], "wolverhampton wanderers": ["wolves", "wolverhampton"], "newcastle united": ["newcastle"], "brighton hove albion": ["brighton"], "real madrid": ["real madrid"], "barcelona": ["barcelona", "barca"], "sporting cp": ["sporting"], "benfica": ["benfica"], "internacional": ["internacional"], "gremio": ["gremio"] },
+    GENERIC: { atletico: 1, athletic: 1, real: 1, united: 1, city: 1, sporting: 1, inter: 1, america: 1, sao: 1, deportivo: 1, nacional: 1, olympique: 1, borussia: 1, racing: 1, independiente: 1, boca: 1, river: 1, juniors: 1, sociedad: 1, central: 1, union: 1, wanderers: 1, rovers: 1, town: 1, hotspur: 1, albion: 1, paulista: 1 },
+    STOP: /\b(fc|ec|sc|cf|ac|as|afc|cd|ca|se|club|clube|futebol|de|do|da|dos|das|the|sad|ssc|fk|sk|bk|if)\b/g,
+    NEG2: /reprise|replay|melhores momentos|compacto|resumo|gols da|retrospectiva|cl[aá]ssic|hist[oó]ria|document/i,
+    items: [],
+    games: [],
+    t: 0,
+    running: false,
+    sig: "",
+    reset() {
+      this.items = [];
+      this.games = [];
+      this.t = 0;
+      this.sig = "";
+    },
+    n(t) {
+      return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+    },
+    keys(team) {
+      const out = {};
+      const add = (k) => {
+        k = this.n(k).replace(this.STOP, " ").replace(/\s+/g, " ").trim();
+        if (k.length >= 4) out[k] = 1;
+      };
+      [team.name, team.short, team.loc, team.nm].forEach((x) => {
+        if (!x) return;
+        add(x);
+        const al = this.ALIAS[this.n(x)];
+        if (al) al.forEach(add);
+      });
+      Object.keys(out).forEach((k) => {
+        const ws = k.split(" ");
+        if (ws.length < 2) return;
+        let best = "";
+        ws.forEach((w) => {
+          if (w.length > best.length && !this.GENERIC[w]) best = w;
+        });
+        if (best.length >= 5) out[best] = 1;
+      });
+      let ks = Object.keys(out);
+      const strong = ks.filter((k) => !this.GENERIC[k]);
+      if (strong.length) ks = strong;
+      return ks;
+    },
+    has(text, ks) {
+      const t = " " + text + " ";
+      for (let i = 0; i < ks.length; i++) if (t.indexOf(" " + ks[i] + " ") > -1) return true;
+      return false;
+    },
+    minute(s) {
+      if (!s) return "";
+      const tp = s.type || {};
+      if (tp.name === "STATUS_HALFTIME") return "Intervalo";
+      return s.displayClock ? String(s.displayClock).replace(/\s/g, "") : tp.shortDetail || "";
+    },
+    parse(data, slug) {
+      const out = [];
+      const lg = data && data.leagues && data.leagues[0];
+      const lname = this.LG_PT[slug] || lg && (lg.shortName || lg.name) || slug;
+      ((data && data.events) || []).forEach((ev) => {
+        const tp = ev.status && ev.status.type;
+        if (!tp || tp.state !== "in") return;
+        const comp = ev.competitions && ev.competitions[0];
+        const cs = comp && comp.competitors || [];
+        const h = cs.find((c) => c.homeAway === "home") || cs[0];
+        const a = cs.find((c) => c.homeAway === "away") || cs[1];
+        if (!h || !a || !h.team || !a.team) return;
+        const side = (c) => ({ name: c.team.displayName || c.team.name || "", short: c.team.shortDisplayName || "", loc: c.team.location || "", nm: c.team.name || "", logo: c.team.logo || "", score: c.score == null ? "" : String(c.score) });
+        out.push({ id: slug + ":" + ev.id, lg: lname, h: side(h), a: side(a), min: this.minute(ev.status) });
+      });
+      return out;
+    },
+    // consulta os campeonatos (6 de cada vez). Se tudo falhar, mantém os jogos da última consulta
+    refresh() {
+      if (this.running) return;
+      const leagues = CONFIG.GAMES_LEAGUES && CONFIG.GAMES_LEAGUES.length ? CONFIG.GAMES_LEAGUES : this.LEAGUES;
+      const games = [], order = {};
+      let idx = 0, active = 0, ok = 0, finished = false;
+      const pid = Store.active && Store.active.id;
+      this.running = true;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        this.running = false;
+        this.t = Date.now();
+        if (Store.active && Store.active.id !== pid) return;
+        if (ok) this.games = games.sort((x, y) => order[x.id] - order[y.id]);
+        this.apply();
+      };
+      const next = () => {
+        while (active < 6 && idx < leagues.length) {
+          const slug = leagues[idx++];
+          active++;
+          fetchJSON(this.BASE + slug + "/scoreboard", { timeout: 12e3, retries: 0 }).then((d) => {
+            if (!d) return;
+            ok++;
+            this.parse(d, slug).forEach((g) => {
+              order[g.id] = games.length;
+              games.push(g);
+            });
+          }, () => {
+          }).then(() => {
+            active--;
+            if (idx >= leagues.length && active === 0) done();
+            else next();
+          });
+        }
+        if (!leagues.length) done();
+      };
+      next();
+    },
+    tick() {
+      if (CONFIG.GAMES_API === true || !Catalog.api) return;
+      if (this.running || Date.now() - this.t < Math.max(30, CONFIG.GAMES_REFRESH || 60) * 1e3) return;
+      this.refresh();
+    },
+    // acha os canais de cada jogo: o título da programação (ou o nome do canal) cita os dois times
+    channelsFor(g, srcs) {
+      const kh = this.keys(g.h), ka = this.keys(g.a);
+      if (!kh.length || !ka.length) return [];
+      const byBase = {};
+      srcs.forEach((p) => {
+        if (p.t && this.NEG2.test(p.t)) return;
+        const text = this.n((p.t || "") + " " + p.ch.name);
+        if (!this.has(text, kh) || !this.has(text, ka)) return;
+        const b = LiveGames.base(p.ch.name) || String(p.ch.id);
+        if (!byBase[b] || LiveGames.rank(p.ch.name) > LiveGames.rank(byBase[b].name)) byBase[b] = p.ch;
+      });
+      const list2 = Object.keys(byBase).map((k) => byBase[k]);
+      list2.sort((x, y) => LiveGames.rank(y.name) - LiveGames.rank(x.name));
+      return list2.slice(0, Math.max(1, CONFIG.GAMES_PER_GAME || 3));
+    },
+    apply() {
+      if (!Store.active || Store.active.kids) return;
+      const srcs = (LiveGames.progs || []).concat(LiveGames.eventChannels().map((ch) => ({ ch, t: "" })));
+      const items = [];
+      this.games.forEach((g) => {
+        this.channelsFor(g, srcs).forEach((ch) => items.push({ g, ch }));
+      });
+      const sig = items.map((i) => i.g.id + "|" + i.ch.id).join(",");
+      const changed = sig !== this.sig;
+      this.sig = sig;
+      this.items = items;
+      if (changed) LiveGames.applyDOM();
+      this.paintLive();
+    },
+    // placar e minuto mudam no próprio cartão, sem refazer a linha
+    paintLive() {
+      this.games.forEach((g) => {
+        const id = String(g.id).replace(/"/g, "");
+        const sc = document.querySelectorAll('[data-gsc="' + id + '"]');
+        for (let i = 0; i < sc.length; i++) sc[i].textContent = this.score(g);
+        const mn = document.querySelectorAll('[data-gmin="' + id + '"]');
+        for (let i = 0; i < mn.length; i++) mn[i].textContent = g.min;
+      });
+    },
+    score(g) {
+      return g.h.score !== "" && g.a.score !== "" ? g.h.score + " - " + g.a.score : "x";
+    },
+    card(it) {
+      const g = it.g, ch = it.ch, nm = esc(g.h.name + " x " + g.a.name);
+      const logo = (t) => t.logo ? '<img class="gm-l" data-src="' + esc(t.logo) + '" alt="" decoding="async" onerror="this.style.visibility=\'hidden\'">' : '<span class="gm-l gm-n">' + esc((t.short || t.name).slice(0, 3).toUpperCase()) + "</span>";
+      return '<div class="card ch gm" data-f tabindex="-1" data-act="playLive" data-k="live" data-id="' + ch.id + '" aria-label="' + nm + " - " + esc(ch.name) + '"><div class="ci"><div class="gm-in">' + logo(g.h) + '<span class="gm-sc" data-gsc="' + esc(g.id) + '">' + esc(this.score(g)) + "</span>" + logo(g.a) + '</div><span class="lv-badge">AO VIVO</span><span class="gm-min" data-gmin="' + esc(g.id) + '">' + esc(g.min) + '</span></div><div class="cm"><b>' + nm + "</b><small>" + esc(g.lg + " · " + ch.name) + "</small></div></div>";
+    }
+  };
   // ---------- JOGOS HOJE: canais com jogo de futebol ao vivo, identificados pela programação (EPG) ----------
   var LiveGames = {
     pid: null,
@@ -4483,6 +4666,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     fullT: 0,
     games: [],
     known: {},
+    progs: [],
     running: false,
     tries: 0,
     timer: 0,
@@ -4525,6 +4709,8 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     sync() {
       if (!Store.active || this.pid === Store.active.id) return;
       this.pid = Store.active.id;
+      this.progs = [];
+      GameAPI.reset();
       this.games = [];
       this.t = 0;
       this.fullT = 0;
@@ -4568,6 +4754,19 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         seen[c.id] = 1;
       });
       return ev.concat(this.games.filter((c) => !seen[c.id]));
+    },
+    // cartões da linha: jogos da API (escudos + placar) primeiro; depois os canais achados só pela programação
+    cardsHTML(limit) {
+      const used = {}, out = [];
+      GameAPI.items.forEach((it) => {
+        if (out.length >= limit) return;
+        used[it.ch.id] = 1;
+        out.push(GameAPI.card(it));
+      });
+      this.list().forEach((ch) => {
+        if (out.length < limit && !used[ch.id]) out.push(chCard(ch));
+      });
+      return out.join("");
     },
     norm(t) {
       return String(t || "").toLowerCase().replace(/[^a-z0-9\u00c0-\u017f ]+/g, " ").replace(/\b(ao vivo|hd|fhd|4k)\b/g, "").replace(/\s+/g, " ").trim();
@@ -4624,6 +4823,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       if (st && st.open) return;
       if (document.hidden || !document.querySelector('.browse[data-kind="home"]')) return;
       this.sync();
+      GameAPI.tick();
       if (this.running || Date.now() - this.t < 5 * 6e4) return;
       clearTimeout(this.timer);
       this.timer = setTimeout(() => {
@@ -4641,7 +4841,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       const api2 = Catalog.api, pid = Store.active && Store.active.id;
       if (this.running || !api2) return;
       const cands = this.candidates(full);
-      const found = [];
+      const found = [], progs = [];
       let idx = 0, active = 0, finished = false;
       this.running = true;
       const done = () => {
@@ -4650,8 +4850,10 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         this.running = false;
         this.t = Date.now();
         if (full) this.fullT = this.t;
+        this.progs = progs;
         this.saveKnown(found);
         this.commit(found, pid);
+        GameAPI.apply();
       };
       const next = () => {
         if (st && st.open && !finished) {
@@ -4669,9 +4871,11 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
           }, () => []);
           pr.then((list2) => {
             const c = Epg.current(list2).cur;
+            const vs = this.variants && this.variants[this.base(ch.name) || String(ch.id)];
+            const bch = vs && vs.length > 1 ? this.best(vs) : ch;
+            if (c) progs.push({ ch: bch, t: c.t });
             if (c && this.isGame(c)) {
-              const vs = this.variants && this.variants[this.base(ch.name) || String(ch.id)];
-              found.push({ ch: vs && vs.length > 1 ? this.best(vs) : ch, g: this.norm(c.t) });
+              found.push({ ch: bch, g: this.norm(c.t) });
             }
           }).then(() => {
             active--;
@@ -4705,7 +4909,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       if (!page) return;
       const sec = page.querySelector('[data-rowkey="live"],[data-rowkey="games"]');
       const all = this.list();
-      if (!sec || !all.length) return;
+      if (!sec || !all.length && !GameAPI.items.length) return;
       // se o foco está nessa linha: só troca quando ele ainda está no primeiro cartão (início da navegação)
       const act = document.activeElement;
       let refocus = false;
@@ -4715,7 +4919,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         refocus = true;
       }
       const tmp = document.createElement("div");
-      tmp.innerHTML = rowHTML({ title: "JOGOS HOJE", key: "games", cls: "row-ch", cards: all.slice(0, 80).map(chCard).join("") });
+      tmp.innerHTML = rowHTML({ title: "JOGOS HOJE", key: "games", cls: "row-ch", cards: this.cardsHTML(80) });
       const ns = tmp.firstChild;
       sec.parentNode.replaceChild(ns, sec);
       mountRow(ns);
@@ -5272,12 +5476,12 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       }
       let rkey = "live";
       const games = LiveGames.list();
-      if (games.length) {
+      if (games.length || GameAPI.items.length) {
         chs = games;
         title = "JOGOS HOJE";
         rkey = "games";
       }
-      if (chs.length) add(() => rowHTML({ title, key: rkey, cls: "row-ch", more: rkey === "live" ? { k: "live", cat: "" } : null, cards: chs.slice(0, rkey === "games" ? 80 : ROW_MAX).map(chCard).join("") }));
+      if (chs.length) add(() => rowHTML({ title, key: rkey, cls: "row-ch", more: rkey === "live" ? { k: "live", cat: "" } : null, cards: rkey === "games" ? LiveGames.cardsHTML(80) : chs.slice(0, ROW_MAX).map(chCard).join("") }));
     }
     types.forEach((t, i) => {
       const top = Catalog.top(t, 10);
