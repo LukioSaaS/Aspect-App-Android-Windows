@@ -370,6 +370,7 @@ html[data-input="key"] .card:focus .ci::after, html[data-layout="tv"] .card:focu
 .gm-l { height: 46%; width: auto; max-width: 30%; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
 .gm-n { display: flex; align-items: center; justify-content: center; height: 2.4rem; min-width: 2.4rem; font-weight: 800; font-size: .8rem; color: var(--fg-3); }
 .gm-sc { font-weight: 800; font-size: 1.15rem; letter-spacing: .04em; white-space: nowrap; }
+.lv-badge.soon { background: rgba(255, 255, 255, .2); color: var(--fg); }
 .gm-min { position: absolute; top: .45rem; right: .45rem; z-index: 2; background: rgba(0,0,0,.6); color: #fff; font-size: .62rem; font-weight: 700; padding: .14rem .4rem; border-radius: .22rem; }
 .lv-badge { position: absolute; top: .45rem; left: .45rem; z-index: 2; background: var(--live); color: #fff; font-size: .58rem; font-weight: 800; letter-spacing: .08em; padding: .14rem .4rem; border-radius: .22rem; }
 .epg-t.none { color: var(--fg-4); }
@@ -1284,8 +1285,8 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     GAMES_MAX_CHANNELS: 800,
     //! JOGOS HOJE: true = só futebol | false = qualquer esporte (UFC, NBA, F1, tênis...)
     GAMES_ONLY_FOOTBALL: true,
-    //! JOGOS HOJE: quantos canais diferentes podem mostrar o MESMO jogo (1 = cada jogo aparece uma vez só)
-    GAMES_PER_GAME: 3,
+    //! JOGOS HOJE: quantos canais diferentes podem mostrar o MESMO jogo (1 = cada jogo aparece uma vez só, no canal HD)
+    GAMES_PER_GAME: 1,
     //! JOGOS HOJE: true = usa a API de jogos ao vivo (placar, escudos e minuto) e liga cada jogo ao canal que está passando
     GAMES_API: true,
     //! JOGOS HOJE: true = mostra o escudo dos times mesmo nos jogos achados só pela programação (busca o escudo pelo nome do time)
@@ -1813,7 +1814,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     previews: true,
     // cartao expandido ao passar o mouse
     motion: "auto",
-    tvStyle: "novo",
+    tvStyle: "classico",
     nativePlayer: "all",
     nativeLive: "on",
     // auto | full | reduced
@@ -2055,6 +2056,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     reduced() {
       if (Store.s.motion === "reduced") return true;
       if (Store.s.motion === "full") return false;
+      if (this.layout === "tv") return true;
       try {
         if (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return true;
       } catch (e) {
@@ -4524,13 +4526,38 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     },
     // "Flamengo x Palmeiras - Brasileirão" -> ["Flamengo", "Palmeiras"]
     parseTeams(t) {
-      const s = String(t || "").replace(/[\[\(][^\]\)]*[\]\)]/g, " ").replace(/\b(ao vivo|live)\b/ig, " ").replace(/\s+/g, " ").replace(/[\s\-–|:]+$/, "").trim();
+      const s = String(t || "").replace(/[\[\(][^\]\)]*[\]\)]/g, " ").replace(/\b(ao vivo|live|hd|fhd|sd|4k)\b/ig, " ").replace(/\s+/g, " ").replace(/[\s\-–|:]+$/, "").trim();
       const parts = s.split(/\s(?:x|vs\.?|×|versus)\s/i);
       if (parts.length !== 2) return null;
-      const left = parts[0].split(/\s*[:|]\s*|\s[-–]\s/).pop().trim();
-      const right = parts[1].split(/\s*[:|]\s*|\s[-–]\s|\s\d{1,2}[:h]\d{2}/)[0].trim();
+      const left = parts[0].split(/\s*[:|►»•·\/]\s*|\s[-–]\s/).pop().trim();
+      const right = parts[1].split(/\s*[:|►»•·\/]\s*|\s[-–]\s|\s\d{1,2}[:h]\d{2}/)[0].trim();
       if (left.length < 3 || right.length < 3 || left.length > 32 || right.length > 32) return null;
       return [left, right];
+    },
+    // chave do jogo (os dois times), igual para "ESPN HD", "ESPN FHD", "ESPN 2" etc.
+    gameKey(title) {
+      const tm = this.parseTeams(title);
+      if (!tm) return "t:" + LiveGames.norm(title);
+      return tm.map((x) => {
+        const al = this.ALIAS[this.n(x)];
+        if (al) return al[0];
+        const ks = this.keys({ name: x, short: "", loc: "", nm: "" });
+        ks.sort((p, q) => q.length - p.length);
+        return ks[0] || this.n(x);
+      }).sort().join("|");
+    },
+    // esse título é de um jogo que a API já mostra (com o canal certo)?
+    covers(title) {
+      if (!this.items.length || !this.parseTeams(title)) return false;
+      const text = this.n(title);
+      return this.items.some((it) => {
+        const g = it.g;
+        if (!g._kh) {
+          g._kh = this.keys(g.h);
+          g._ka = this.keys(g.a);
+        }
+        return this.has(text, g._kh) && this.has(text, g._ka);
+      });
     },
     fromTeams(tm, ch) {
       const side = (nm) => ({ name: nm, short: nm, loc: "", nm, logo: this.badge(nm), score: "" });
@@ -4627,14 +4654,17 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       const lname = this.LG_PT[slug] || lg && (lg.shortName || lg.name) || slug;
       ((data && data.events) || []).forEach((ev) => {
         const tp = ev.status && ev.status.type;
-        if (!tp || tp.state !== "in") return;
+        if (!tp) return;
+        const pre = tp.state === "pre";
+        const start = pre ? new Date(ev.date).getTime() : 0;
+        if (tp.state !== "in" && !(pre && start && new Date(start).toDateString() === new Date().toDateString() && !/POSTPONED|CANCEL|ABANDON/.test(tp.name || ""))) return;
         const comp = ev.competitions && ev.competitions[0];
         const cs = comp && comp.competitors || [];
         const h = cs.find((c) => c.homeAway === "home") || cs[0];
         const a = cs.find((c) => c.homeAway === "away") || cs[1];
         if (!h || !a || !h.team || !a.team) return;
         const side = (c) => ({ name: c.team.displayName || c.team.name || "", short: c.team.shortDisplayName || "", loc: c.team.location || "", nm: c.team.name || "", logo: c.team.logo || "", score: c.score == null ? "" : String(c.score) });
-        out.push({ id: slug + ":" + ev.id, lg: lname, h: side(h), a: side(a), min: this.minute(ev.status) });
+        out.push({ id: slug + ":" + ev.id, lg: lname, h: side(h), a: side(a), min: pre ? "" : this.minute(ev.status), st: pre ? "pre" : "in", start });
       });
       return out;
     },
@@ -4656,7 +4686,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         this.t = Date.now();
         if (full && ok) this.fullT = this.t;
         if (Store.active && Store.active.id !== pid) return;
-        if (ok) this.games = games.sort((x, y) => order[x.id] - order[y.id]);
+        if (ok) this.games = games.sort((x, y) => (x.st === "pre") - (y.st === "pre") || (x.st === "pre" ? x.start - y.start : order[x.id] - order[y.id]));
         this.apply();
       };
       const next = () => {
@@ -4691,9 +4721,14 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     channelsFor(g, srcs) {
       const kh = this.keys(g.h), ka = this.keys(g.a);
       if (!kh.length || !ka.length) return [];
-      const byBase = {};
+      const byBase = {}, pre = g.st === "pre";
       srcs.forEach((p) => {
         if (p.t && this.NEG2.test(p.t)) return;
+        if (p.s !== void 0) {
+          const now = Epg.now();
+          // jogo ao vivo: programa no ar agora. Jogo de hoje: programa que começa perto do horário do jogo
+          if (pre ? p.e <= now || Math.abs(p.s - g.start) > 90 * 6e4 : p.s > now || p.e <= now) return;
+        }
         const text = this.n((p.t || "") + " " + p.ch.name);
         if (!this.has(text, kh) || !this.has(text, ka)) return;
         const b = LiveGames.base(p.ch.name) || String(p.ch.id);
@@ -4701,7 +4736,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       });
       const list2 = Object.keys(byBase).map((k) => byBase[k]);
       list2.sort((x, y) => LiveGames.rank(y.name) - LiveGames.rank(x.name));
-      return list2.slice(0, Math.max(1, CONFIG.GAMES_PER_GAME || 3));
+      return list2.slice(0, Math.max(1, CONFIG.GAMES_PER_GAME || 1));
     },
     apply() {
       if (!Store.active || Store.active.kids) return;
@@ -4710,7 +4745,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       this.games.forEach((g) => {
         this.channelsFor(g, srcs).forEach((ch) => items.push({ g, ch }));
       });
-      const sig = items.map((i) => i.g.id + "|" + i.ch.id).join(",");
+      const sig = items.map((i) => i.g.id + "|" + i.g.st + "|" + i.ch.id).join(",");
       const changed = sig !== this.sig;
       this.sig = sig;
       this.items = items;
@@ -4728,12 +4763,21 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       });
     },
     score(g) {
+      if (g.st === "pre") return this.timeStr(g);
       return g.h.score !== "" && g.a.score !== "" ? g.h.score + " - " + g.a.score : "x";
     },
+    timeStr(g) {
+      try {
+        return new Date(g.start).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", hour12: false });
+      } catch (e) {
+        return "";
+      }
+    },
     card(it) {
-      const g = it.g, ch = it.ch, nm = esc(g.h.name + " x " + g.a.name);
+      const g = it.g, ch = it.ch, pre = g.st === "pre", nm = esc(g.h.name + " x " + g.a.name);
       const logo = (t) => t.logo ? '<img class="gm-l" data-src="' + esc(t.logo) + '" alt="" decoding="async" onerror="this.style.visibility=\'hidden\'">' : '<span class="gm-l gm-n">' + esc((t.short || t.name).slice(0, 3).toUpperCase()) + "</span>";
-      return '<div class="card ch gm" data-f tabindex="-1" data-act="playLive" data-k="live" data-id="' + ch.id + '" aria-label="' + nm + " - " + esc(ch.name) + '"><div class="ci"><div class="gm-in">' + logo(g.h) + '<span class="gm-sc" data-gsc="' + esc(g.id) + '">' + esc(this.score(g)) + "</span>" + logo(g.a) + '</div><span class="lv-badge">AO VIVO</span>' + (g.min ? '<span class="gm-min" data-gmin="' + esc(g.id) + '">' + esc(g.min) + "</span>" : "") + '</div><div class="cm"><b>' + nm + "</b><small>" + esc((g.lg ? g.lg + " · " : "") + ch.name) + "</small></div></div>";
+      const badge = pre ? '<span class="lv-badge soon">HOJE</span>' : '<span class="lv-badge">AO VIVO</span>';
+      return '<div class="card ch gm" data-f tabindex="-1" data-act="playLive" data-k="live" data-id="' + ch.id + '" aria-label="' + nm + (pre ? " - " + esc(this.timeStr(g)) : "") + " - " + esc(ch.name) + '"><div class="ci"><div class="gm-in">' + logo(g.h) + '<span class="gm-sc" data-gsc="' + esc(g.id) + '">' + esc(this.score(g)) + "</span>" + logo(g.a) + "</div>" + badge + (g.min && !pre ? '<span class="gm-min" data-gmin="' + esc(g.id) + '">' + esc(g.min) + "</span>" : "") + '</div><div class="cm"><b>' + nm + "</b><small>" + esc((g.lg ? g.lg + " · " : "") + ch.name) + "</small></div></div>";
     }
   };
   // ---------- JOGOS HOJE: canais com jogo de futebol ao vivo, identificados pela programação (EPG) ----------
@@ -4744,6 +4788,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     games: [],
     known: {},
     progs: [],
+    pmap: {},
     titles: {},
     running: false,
     tries: 0,
@@ -4772,8 +4817,8 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     rank(name) {
       const n = String(name || "").normalize("NFKD").toLowerCase();
       if (/\b(4k|uhd|8k)\b/.test(n)) return 2;
-      if (/\b(fhd|full ?hd|1080p?)\b/.test(n)) return 5;
-      if (/\bhd\b|720p?/.test(n)) return 4;
+      if (/\b(fhd|full ?hd|1080p?)\b/.test(n)) return 4;
+      if (/\bhd\b|720p?/.test(n)) return 5;
       if (/\bsd\b|480p?|576p?/.test(n)) return 1;
       return 3;
     },
@@ -4788,6 +4833,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       if (!Store.active || this.pid === Store.active.id) return;
       this.pid = Store.active.id;
       this.progs = [];
+      this.pmap = {};
       GameAPI.reset();
       this.games = [];
       this.t = 0;
@@ -4835,16 +4881,33 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     },
     // cartões da linha: jogos da API (escudos + placar) primeiro; depois os canais achados só pela programação
     cardsHTML(limit) {
+      const per = Math.max(1, CONFIG.GAMES_PER_GAME || 1);
       const used = {}, out = [];
       GameAPI.items.forEach((it) => {
         if (out.length >= limit) return;
         used[it.ch.id] = 1;
         out.push(GameAPI.card(it));
       });
+      // canais achados só pela programação: um cartão por jogo, no melhor canal (HD)
+      const groups = {}, keys = [];
       this.list().forEach((ch) => {
-        if (out.length >= limit || used[ch.id]) return;
-        const tm = CONFIG.GAMES_BADGES === false ? null : GameAPI.parseTeams(this.titles[ch.id] || ch.name);
-        out.push(tm ? GameAPI.card({ g: GameAPI.fromTeams(tm, ch), ch }) : chCard(ch));
+        if (used[ch.id]) return;
+        const title = this.titles[ch.id] || ch.name;
+        if (GameAPI.covers(title)) return;
+        const k = GameAPI.gameKey(title);
+        if (!groups[k]) {
+          groups[k] = [];
+          keys.push(k);
+        }
+        groups[k].push(ch);
+      });
+      keys.forEach((k) => {
+        groups[k].sort((x, y) => this.rank(y.name) - this.rank(x.name));
+        groups[k].slice(0, per).forEach((ch) => {
+          if (out.length >= limit) return;
+          const tm = CONFIG.GAMES_BADGES === false ? null : GameAPI.parseTeams(this.titles[ch.id] || ch.name);
+          out.push(tm ? GameAPI.card({ g: GameAPI.fromTeams(tm, ch), ch }) : chCard(ch));
+        });
       });
       return out.join("");
     },
@@ -4930,7 +4993,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         this.running = false;
         this.t = Date.now();
         if (full) this.fullT = this.t;
-        this.progs = progs;
+        this.progs = [].concat.apply([], Object.keys(this.pmap).map((k) => this.pmap[k]));
         this.saveKnown(found);
         this.commit(found, pid);
         GameAPI.apply();
@@ -4944,7 +5007,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
           const ch = cands[idx++];
           active++;
           const cached = Epg.peek(ch.id);
-          const pr = cached ? Promise.resolve(cached) : api2.shortEpg(ch.id, 4).then((r) => {
+          const pr = cached ? Promise.resolve(cached) : api2.shortEpg(ch.id, 8).then((r) => {
             const v = Epg.parse(r);
             Epg.cache["short:" + ch.id] = { t: Date.now(), v };
             return v;
@@ -4953,10 +5016,15 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
             const c = Epg.current(list2).cur;
             const vs = this.variants && this.variants[this.base(ch.name) || String(ch.id)];
             const bch = vs && vs.length > 1 ? this.best(vs) : ch;
-            if (c) progs.push({ ch: bch, t: c.t });
+            const nowE = Epg.now(), entries = [];
+            list2.forEach((p) => {
+              if (p.e <= nowE) return;
+              if (p.s <= nowE || this.VS.test(p.t) && p.s < nowE + 24 * 36e5) entries.push({ ch: bch, t: p.t, s: p.s, e: p.e });
+            });
+            this.pmap[bch.id] = entries;
             if (c && this.isGame(c)) {
               this.titles[bch.id] = c.t;
-              found.push({ ch: bch, g: this.norm(c.t) });
+              found.push({ ch: bch, g: this.norm(c.t), t: c.t });
             }
           }).then(() => {
             active--;
@@ -4973,12 +5041,20 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     },
     commit(found, pid) {
       if (Store.active && Store.active.id !== pid) return;
-      const per = {}, out = [];
+      const per = Math.max(1, CONFIG.GAMES_PER_GAME || 1), groups = {}, keys = [], out = [];
       found.forEach((f) => {
-        per[f.g] = (per[f.g] || 0) + 1;
-        if (per[f.g] <= Math.max(1, CONFIG.GAMES_PER_GAME || 3)) out.push(f);
+        const k = GameAPI.gameKey(f.t || f.g);
+        if (!groups[k]) {
+          groups[k] = [];
+          keys.push(k);
+        }
+        if (!groups[k].some((x) => x.ch === f.ch)) groups[k].push(f);
       });
-      out.sort((a, b) => a.g < b.g ? -1 : a.g > b.g ? 1 : 0);
+      keys.sort();
+      keys.forEach((k) => {
+        groups[k].sort((a, b) => this.rank(b.ch.name) - this.rank(a.ch.name));
+        groups[k].slice(0, per).forEach((f) => out.push(f));
+      });
       const list2 = out.map((f) => f.ch);
       const same = list2.length === this.games.length && list2.every((c, i) => c === this.games[i]);
       this.games = list2;
@@ -10586,7 +10662,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     nativeLive: [{ v: "on", label: "Ligado (recomendado)", desc: "Canais ao vivo mais fluidos, usando o decodificador do aparelho" }, { v: "off", label: "Desligado", desc: "Usa o player do navegador" }],
     nativePlayer: [{ v: "all", label: "Todos os vídeos (recomendado)", desc: "Usa o player do Android em todos os filmes e séries" }, { v: "mkv", label: "Só MKV e AVI", desc: "Mostra as faixas de áudio e as legendas desses arquivos" }, { v: "off", label: "Desligado", desc: "Usa só o player do navegador" }],
     tvStyle: [{ v: "novo", label: "Novo", desc: "Banner compacto com a capa à direita e duas linhas de títulos" }, { v: "classico", label: "Clássico", desc: "Banner grande e uma linha de títulos" }],
-    motion: [{ v: "auto", label: "Automático" }, { v: "full", label: "Completas" }, { v: "reduced", label: "Reduzidas", desc: "Mais leve em TVs antigas" }],
+    motion: [{ v: "auto", label: "Automático", desc: "Reduzidas na TV" }, { v: "full", label: "Completas" }, { v: "reduced", label: "Reduzidas", desc: "Mais leve em TVs antigas" }],
     startPage: [{ v: "home", label: "Início" }, { v: "live", label: "TV ao vivo" }, { v: "movies", label: "Filmes" }, { v: "series", label: "Séries" }],
     sort: [{ v: "added", label: "Adicionados recentemente" }, { v: "name", label: "Ordem alfabética (A–Z)" }, { v: "rating", label: "Mais bem avaliados" }, { v: "year", label: "Lançamento (mais novos)" }, { v: "server", label: "Ordem do servidor" }],
     cacheHours: [{ v: 3, label: "3 horas" }, { v: 6, label: "6 horas" }, { v: 12, label: "12 horas" }, { v: 24, label: "1 dia" }, { v: 72, label: "3 dias" }]
@@ -11197,6 +11273,11 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     injectIcons();
     bindNativeBack();
     Device.detect();
+    if (Device.layout === "tv" && !Store.s.tvDef1) {
+      Store.s.tvStyle = "classico";
+      Store.s.tvDef1 = true;
+      LS.set("settings", Store.s);
+    }
     applyTheme();
     Device.initInput();
     Device.registerTVKeys();
