@@ -75,6 +75,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AspectPlayerPlugin.class);
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // Sem barra de rolagem do sistema por cima do app e do player
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView wv = getBridge().getWebView();
+            wv.setVerticalScrollBarEnabled(false);
+            wv.setHorizontalScrollBarEnabled(false);
+            wv.setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
+        }
         getWindow().getDecorView().setBackgroundColor(Color.parseColor("#050505"));
 
         // Ocupa a tela toda, inclusive ao redor da camera (notch / furo)
