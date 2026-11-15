@@ -69,6 +69,7 @@ html, body { touch-action: pan-x pan-y; }
 .pl .pl-v { background: #000; }
 html.exo-on, html.exo-on body { background: transparent !important; }
 html.exo-on #app { visibility: hidden; }
+html.exo-on body::before, html.exo-on body::after { display: none !important; }
 .pl.exo { background: transparent; }
 .pl.exo .pl-v { visibility: hidden; }
 @keyframes rb-fill-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -1287,8 +1288,10 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     GAMES_PER_GAME: 3,
     //! JOGOS HOJE: true = usa a API de jogos ao vivo (placar, escudos e minuto) e liga cada jogo ao canal que está passando
     GAMES_API: true,
+    //! JOGOS HOJE: true = mostra o escudo dos times mesmo nos jogos achados só pela programação (busca o escudo pelo nome do time)
+    GAMES_BADGES: true,
     //! JOGOS HOJE: de quanto em quanto tempo (segundos) a API é consultada de novo
-    GAMES_REFRESH: 30,
+    GAMES_REFRESH: 60,
     //! JOGOS HOJE: campeonatos consultados na API (códigos da ESPN). Deixe [] para usar a lista padrão do app
     GAMES_LEAGUES: [],
     //! Biblioteca propria de legendas e audios extras (arquivo .json). Veja o LEIA-ME.
@@ -4501,13 +4504,82 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     items: [],
     games: [],
     t: 0,
+    fullT: 0,
+    open: {},
     running: false,
     sig: "",
+    badges: null,
+    bq: [],
+    bPend: {},
+    bFail: {},
+    bBusy: false,
+    bT: 0,
     reset() {
       this.items = [];
       this.games = [];
       this.t = 0;
+      this.fullT = 0;
+      this.open = {};
       this.sig = "";
+    },
+    // "Flamengo x Palmeiras - Brasileirão" -> ["Flamengo", "Palmeiras"]
+    parseTeams(t) {
+      const s = String(t || "").replace(/[\[\(][^\]\)]*[\]\)]/g, " ").replace(/\b(ao vivo|live)\b/ig, " ").replace(/\s+/g, " ").replace(/[\s\-–|:]+$/, "").trim();
+      const parts = s.split(/\s(?:x|vs\.?|×|versus)\s/i);
+      if (parts.length !== 2) return null;
+      const left = parts[0].split(/\s*[:|]\s*|\s[-–]\s/).pop().trim();
+      const right = parts[1].split(/\s*[:|]\s*|\s[-–]\s|\s\d{1,2}[:h]\d{2}/)[0].trim();
+      if (left.length < 3 || right.length < 3 || left.length > 32 || right.length > 32) return null;
+      return [left, right];
+    },
+    fromTeams(tm, ch) {
+      const side = (nm) => ({ name: nm, short: nm, loc: "", nm, logo: this.badge(nm), score: "" });
+      return { id: "ch" + ch.id, lg: "", min: "", h: side(tm[0]), a: side(tm[1]) };
+    },
+    // escudo pelo nome do time (TheSportsDB, gratuito). Fica guardado no aparelho; sem escudo, o cartão mostra a sigla
+    badge(name) {
+      if (!this.badges) {
+        try {
+          this.badges = JSON.parse(localStorage.getItem("aspect.badges") || "{}") || {};
+        } catch (e) {
+          this.badges = {};
+        }
+      }
+      const k = this.n(name), v = this.badges[k];
+      if (typeof v === "string") return v;
+      if (!this.bPend[k] && !(this.bFail[k] && Date.now() - this.bFail[k] < 10 * 6e4)) {
+        this.bPend[k] = 1;
+        this.bq.push([name, k]);
+        this.bRun();
+      }
+      return "";
+    },
+    bRun() {
+      if (this.bBusy || !this.bq.length) return;
+      this.bBusy = true;
+      const job = this.bq.shift(), k = job[1];
+      fetchJSON("https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=" + encodeURIComponent(job[0]), { timeout: 1e4, retries: 0 }).then((d) => {
+        const ts = (d && d.teams || []).filter((t) => t && t.strSport === "Soccer");
+        const pick = ts.find((t) => this.n(t.strTeam) === k) || ts[0];
+        if (Object.keys(this.badges).length > 600) this.badges = {};
+        this.badges[k] = pick ? pick.strBadge || pick.strTeamBadge || "" : "";
+        try {
+          localStorage.setItem("aspect.badges", JSON.stringify(this.badges));
+        } catch (e) {
+        }
+        return true;
+      }, () => false).then((ok) => {
+        delete this.bPend[k];
+        if (!ok) this.bFail[k] = Date.now();
+        else {
+          clearTimeout(this.bT);
+          this.bT = setTimeout(() => LiveGames.applyDOM(), 900);
+        }
+        setTimeout(() => {
+          this.bBusy = false;
+          this.bRun();
+        }, 1300);
+      });
     },
     n(t) {
       return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -4569,7 +4641,10 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     // consulta os campeonatos (6 de cada vez). Se tudo falhar, mantém os jogos da última consulta
     refresh() {
       if (this.running) return;
-      const leagues = CONFIG.GAMES_LEAGUES && CONFIG.GAMES_LEAGUES.length ? CONFIG.GAMES_LEAGUES : this.LEAGUES;
+      const all = CONFIG.GAMES_LEAGUES && CONFIG.GAMES_LEAGUES.length ? CONFIG.GAMES_LEAGUES : this.LEAGUES;
+      // a cada 15 min olha todos os campeonatos; no resto do tempo só os que têm jogo hoje
+      const full = !this.fullT || Date.now() - this.fullT > 15 * 6e4;
+      const leagues = full ? all : all.filter((x) => this.open[x] !== false);
       const games = [], order = {};
       let idx = 0, active = 0, ok = 0, finished = false;
       const pid = Store.active && Store.active.id;
@@ -4579,6 +4654,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         finished = true;
         this.running = false;
         this.t = Date.now();
+        if (full && ok) this.fullT = this.t;
         if (Store.active && Store.active.id !== pid) return;
         if (ok) this.games = games.sort((x, y) => order[x.id] - order[y.id]);
         this.apply();
@@ -4590,6 +4666,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
           fetchJSON(this.BASE + slug + "/scoreboard", { timeout: 12e3, retries: 0 }).then((d) => {
             if (!d) return;
             ok++;
+            this.open[slug] = (d.events || []).some((e) => e.status && e.status.type && e.status.type.state !== "post");
             this.parse(d, slug).forEach((g) => {
               order[g.id] = games.length;
               games.push(g);
@@ -4606,7 +4683,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       next();
     },
     tick() {
-      if (CONFIG.GAMES_API === true || !Catalog.api) return;
+      if (CONFIG.GAMES_API === false || !Catalog.api) return;
       if (this.running || Date.now() - this.t < Math.max(30, CONFIG.GAMES_REFRESH || 60) * 1e3) return;
       this.refresh();
     },
@@ -4656,7 +4733,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     card(it) {
       const g = it.g, ch = it.ch, nm = esc(g.h.name + " x " + g.a.name);
       const logo = (t) => t.logo ? '<img class="gm-l" data-src="' + esc(t.logo) + '" alt="" decoding="async" onerror="this.style.visibility=\'hidden\'">' : '<span class="gm-l gm-n">' + esc((t.short || t.name).slice(0, 3).toUpperCase()) + "</span>";
-      return '<div class="card ch gm" data-f tabindex="-1" data-act="playLive" data-k="live" data-id="' + ch.id + '" aria-label="' + nm + " - " + esc(ch.name) + '"><div class="ci"><div class="gm-in">' + logo(g.h) + '<span class="gm-sc" data-gsc="' + esc(g.id) + '">' + esc(this.score(g)) + "</span>" + logo(g.a) + '</div><span class="lv-badge">AO VIVO</span><span class="gm-min" data-gmin="' + esc(g.id) + '">' + esc(g.min) + '</span></div><div class="cm"><b>' + nm + "</b><small>" + esc(g.lg + " · " + ch.name) + "</small></div></div>";
+      return '<div class="card ch gm" data-f tabindex="-1" data-act="playLive" data-k="live" data-id="' + ch.id + '" aria-label="' + nm + " - " + esc(ch.name) + '"><div class="ci"><div class="gm-in">' + logo(g.h) + '<span class="gm-sc" data-gsc="' + esc(g.id) + '">' + esc(this.score(g)) + "</span>" + logo(g.a) + '</div><span class="lv-badge">AO VIVO</span>' + (g.min ? '<span class="gm-min" data-gmin="' + esc(g.id) + '">' + esc(g.min) + "</span>" : "") + '</div><div class="cm"><b>' + nm + "</b><small>" + esc((g.lg ? g.lg + " · " : "") + ch.name) + "</small></div></div>";
     }
   };
   // ---------- JOGOS HOJE: canais com jogo de futebol ao vivo, identificados pela programação (EPG) ----------
@@ -4667,6 +4744,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     games: [],
     known: {},
     progs: [],
+    titles: {},
     running: false,
     tries: 0,
     timer: 0,
@@ -4764,7 +4842,9 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
         out.push(GameAPI.card(it));
       });
       this.list().forEach((ch) => {
-        if (out.length < limit && !used[ch.id]) out.push(chCard(ch));
+        if (out.length >= limit || used[ch.id]) return;
+        const tm = CONFIG.GAMES_BADGES === false ? null : GameAPI.parseTeams(this.titles[ch.id] || ch.name);
+        out.push(tm ? GameAPI.card({ g: GameAPI.fromTeams(tm, ch), ch }) : chCard(ch));
       });
       return out.join("");
     },
@@ -4875,6 +4955,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
             const bch = vs && vs.length > 1 ? this.best(vs) : ch;
             if (c) progs.push({ ch: bch, t: c.t });
             if (c && this.isGame(c)) {
+              this.titles[bch.id] = c.t;
               found.push({ ch: bch, g: this.norm(c.t) });
             }
           }).then(() => {
