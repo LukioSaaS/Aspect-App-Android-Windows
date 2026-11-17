@@ -169,4 +169,28 @@ n = os.environ.get("BUILD_NUMBER", "1")
 g = re.sub(r"versionCode\s+\d+", "versionCode " + n, g, count=1)
 g = re.sub(r'versionName\s+"[^"]*"', 'versionName "1.' + n + '"', g, count=1)
 open(GRADLE, "w", encoding="utf-8").write(g)
+
+# ---------- assinatura de release (Play Store): so quando a chave e informada ----------
+if os.environ.get("KEYSTORE_FILE"):
+    g = open(GRADLE, encoding="utf-8").read()
+    if "signingConfigs" not in g:
+        sc = (
+            "    signingConfigs {\n"
+            "        release {\n"
+            '            storeFile file(System.getenv("KEYSTORE_FILE"))\n'
+            '            storePassword System.getenv("KEYSTORE_PASSWORD")\n'
+            '            keyAlias System.getenv("KEY_ALIAS") ?: "aspect"\n'
+            '            keyPassword System.getenv("KEYSTORE_PASSWORD")\n'
+            "        }\n"
+            "    }\n"
+        )
+        if "buildTypes {" not in g:
+            raise SystemExit("buildTypes nao encontrado no build.gradle")
+        g = g.replace("    buildTypes {", sc + "    buildTypes {", 1)
+        g, k = re.subn(r"(buildTypes\s*\{\s*release\s*\{)", r"\1\n            signingConfig signingConfigs.release", g, count=1)
+        if not k:
+            raise SystemExit("bloco release nao encontrado no build.gradle")
+        open(GRADLE, "w", encoding="utf-8").write(g)
+        print("assinatura de release configurada")
+
 print("ajustes aplicados, pacote:", pkg)
