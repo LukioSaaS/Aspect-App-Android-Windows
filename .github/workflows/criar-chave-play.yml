@@ -1,0 +1,34 @@
+name: Criar chave da Play Store (só uma vez)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chave:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Gerar a chave de assinatura
+        run: |
+          SENHA=$(openssl rand -hex 12)
+          echo "::add-mask::$SENHA"
+          keytool -genkeypair -keystore upload.jks -alias aspect \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$SENHA" -keypass "$SENHA" \
+            -dname "CN=Aspect, O=Aspect, C=BR"
+          echo "$SENHA" > SENHA.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chave-play-aspect
+          path: |
+            upload.jks
+            SENHA.txt
+          retention-days: 2

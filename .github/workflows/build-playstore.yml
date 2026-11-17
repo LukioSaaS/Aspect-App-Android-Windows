@@ -1,0 +1,86 @@
+name: Gerar app para a Play Store (.aab)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  aab:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_FILE: ${{ github.workspace }}/signing/upload.jks
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: aspect
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conferir a chave de assinatura
+        run: |
+          if [ ! -f signing/upload.jks ]; then
+            echo "::error::Falta o arquivo signing/upload.jks no repositório. Veja o PLAY-STORE.md (passo 2)."
+            exit 1
+          fi
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Falta o segredo KEYSTORE_PASSWORD. Veja o PLAY-STORE.md (passo 2)."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependências (Capacitor 8, que mira o Android 16)
+        run: |
+          node -e "
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          for (const k of ['@capacitor/android', '@capacitor/core', '@capacitor/app', '@capacitor/screen-orientation']) p.dependencies[k] = '^8.0.0';
+          p.devDependencies['@capacitor/cli'] = '^8.0.0';
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2));
+          "
+          npm install --no-audit --no-fund
+
+      - name: Criar o projeto Android
+        run: npx cap add android
+
+      - name: Ícones e tela de abertura
+        continue-on-error: true
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#050505' --iconBackgroundColorDark '#050505' --splashBackgroundColor '#050505' --splashBackgroundColorDark '#050505'
+
+      - name: Ajustes do app (TV, HTTP, tela cheia, assinatura)
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: python3 scripts/patch_android.py
+
+      - name: Sincronizar
+        run: npx cap sync android
+
+      - name: Conferir a versão alvo do Android (precisa ser 36 ou mais)
+        run: |
+          python3 - <<'PY'
+          import re
+          v = open('android/variables.gradle').read()
+          t = int(re.search(r'targetSdkVersion\s*=\s*(\d+)', v).group(1))
+          print('targetSdkVersion =', t)
+          raise SystemExit(0 if t >= 36 else 'targetSdkVersion menor que 36: a Play Store não aceita')
+          PY
+
+      - name: Compilar o pacote (.aab)
+        working-directory: android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Renomear
+        run: cp android/app/build/outputs/bundle/release/app-release.aab aspect.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aspect-aab
+          path: aspect.aab
+          retention-days: 30
