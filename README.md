@@ -30,3 +30,17 @@ Como o instalador não é assinado, o Windows mostra "O Windows protegeu o compu
 ## MKV com várias faixas de áudio e legendas (Android)
 O app usa o player nativo do Android (ExoPlayer) para os vídeos e para a TV ao vivo. Ele mostra as faixas de áudio e as legendas de texto (SRT/ASS) do arquivo em "Áudio e legendas".
 Configurações › Reprodução › "Player do Android" permite usar o player nativo só em MKV/AVI ou desligá-lo.
+
+## JOGOS HOJE com API (jogos ao vivo)
+A linha JOGOS HOJE consulta uma API gratuita (ESPN, sem chave) a cada 60 s e mostra só os jogos de futebol que estão rolando agora, com escudos, placar e minuto. Cada jogo é ligado ao canal que o transmite: o app procura, na programação (EPG) e no nome dos canais, o título com os dois times. Tocar no cartão abre o canal.
+Ajustes no topo do `www/index.html` (CONFIG): `GAMES_API` (liga/desliga), `GAMES_REFRESH` (segundos), `GAMES_LEAGUES` (campeonatos; vazio = lista padrão) e `GAMES_PER_GAME` (quantos canais por jogo).
+Se a API falhar, a linha volta a funcionar só pela programação, como antes.
+Os jogos achados só pela programação também mostram escudos (`GAMES_BADGES`): o app busca o escudo pelo nome do time e guarda no aparelho. Sem escudo, o cartão mostra a sigla do time.
+Um jogo aparece uma vez só, no canal em HD (o servidor pode mandar o mesmo canal como SD, HD, FHD, ESPN 1, ESPN 2...). `GAMES_PER_GAME` muda isso (1 = só o melhor canal).
+Os jogos de hoje que ainda vão começar também entram na linha, com o horário no lugar do placar e o canal onde vão passar (achado pela programação do canal). Jogos sem canal encontrado não aparecem.
+
+## Modo TV
+Na TV o app abre por padrão no estilo Clássico e com animações reduzidas. Dá para mudar em Configurações.
+
+## Play Store
+O passo a passo para publicar na Google Play (celular e Android TV) está no arquivo `PLAY-STORE.md`.
