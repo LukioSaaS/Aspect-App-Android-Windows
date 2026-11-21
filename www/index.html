@@ -7067,6 +7067,10 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
       return;
     }
     if (!final && st.ai < st.attempts.length - 1) {
+      if (st.playedOnce && isVod()) {
+        const h = st.seekHint, p = h && Date.now() - h.at < 9e4 ? h.t : curTimeSafe();
+        if (p > 5) st.startAt = p;
+      }
       st.ai++;
       st.playedOnce = false;
       run();
@@ -7185,6 +7189,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     });
     ep.addListener("exoError", (e) => {
       if (!exoOn()) return;
+      if (!st.exo.live) toast("Player nativo: erro " + (e && e.code || "?") + (e && e.message ? " - " + String(e.message).slice(0, 90) : "") + ". Tentando outro modo.", "alert", 6000);
       fail({ msg: e && e.message || "Erro no player nativo", code: "exo" + (e && e.code || ""), media: true });
     });
   }
@@ -7644,6 +7649,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     const d = duration();
     if (!d && !exoOn()) return;
     t = d > 1 ? clamp(t, 0, Math.max(0, d - 1)) : Math.max(0, t);
+    st.seekHint = { t, at: Date.now() };
     if (castOn()) {
       castSeek(t);
       paintProgress(t, d);
