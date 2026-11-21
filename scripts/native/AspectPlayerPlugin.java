@@ -109,6 +109,17 @@ public class AspectPlayerPlugin extends Plugin {
                 }, 1500L * retries);
                 return;
             }
+            if (!liveMode && net && retries < 2) {
+                // filme/serie: tenta de novo no mesmo ponto (o player guarda a posicao) antes de desistir
+                retries++;
+                handler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (player != null) player.prepare();
+                    }
+                }, 1200L * retries);
+                return;
+            }
             JSObject o = new JSObject();
             o.put("code", error.errorCode);
             o.put("message", String.valueOf(error.getMessage()));
