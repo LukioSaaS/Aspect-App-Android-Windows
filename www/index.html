@@ -991,6 +991,8 @@ html[data-layout="tv"]:not([data-tvstyle="classico"]) .browse .hero-pv img { pos
 html[data-layout="tv"]:not([data-tvstyle="classico"]) .browse .hero-pv img.on { opacity: 1; }
 html[data-layout="tv"]:not([data-tvstyle="classico"]) .browse .hero.live .hero-pv { display: none; }
 html[data-layout="tv"] .browse .subhdr { position: fixed; z-index: 7; }
+/* nas abas Filmes e Séries da TV o titulo "Filmes/Séries" já fica fixo no topo: o rotulo do destaque (icone + FILME) subia por baixo dele */
+html[data-layout="tv"] .browse[data-kind="movies"] .hero-kind, html[data-layout="tv"] .browse[data-kind="series"] .hero-kind { display: none; }
 html[data-layout="tv"] .browse .hero.none { position: relative; height: calc(var(--hdr-t) + 4rem); }
 html[data-layout="tv"] .browse .hero.none ~ .rows { padding-top: 0; }
 html[data-layout="tv"] .row { margin-bottom: 1.2rem; }
@@ -1818,7 +1820,7 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     // cartao expandido ao passar o mouse
     motion: "auto",
     tvStyle: "classico",
-    nativePlayer: "all",
+    nativePlayer: "mkv",
     nativeLive: "on",
     // auto | full | reduced
     clock24: true,
@@ -11290,6 +11292,12 @@ html[data-layout="mob"] .hero-btns .btn-ghost .ic { margin: 0; }
     if (Device.layout === "tv" && !Store.s.tvDef1) {
       Store.s.tvStyle = "classico";
       Store.s.tvDef1 = true;
+      LS.set("settings", Store.s);
+    }
+    // uma vez: filmes em MP4 voltam a tocar no player do navegador (que pula normal); o do Android fica para MKV/AVI
+    if (!Store.s.npDef1) {
+      Store.s.npDef1 = true;
+      if (Store.s.nativePlayer === "all") Store.s.nativePlayer = "mkv";
       LS.set("settings", Store.s);
     }
     applyTheme();
