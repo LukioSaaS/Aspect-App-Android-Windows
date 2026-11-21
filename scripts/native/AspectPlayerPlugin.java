@@ -19,7 +19,10 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -55,6 +58,18 @@ public class AspectPlayerPlugin extends Plugin {
         }
     };
 
+    // diagnostico: manda uma linha de texto para o painel "Detalhes tecnicos" do app
+    private void dbg(final String msg) {
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                JSObject o = new JSObject();
+                o.put("msg", msg);
+                notifyListeners("exoDebug", o);
+            }
+        });
+    }
+
     private void ui(Runnable r) {
         getActivity().runOnUiThread(r);
     }
@@ -85,8 +100,14 @@ public class AspectPlayerPlugin extends Plugin {
         }
 
         @Override
+        public void onPositionDiscontinuity(Player.PositionInfo oldPosition, Player.PositionInfo newPosition, int reason) {
+            dbg("salto (motivo " + reason + "): " + oldPosition.positionMs + " -> " + newPosition.positionMs + " ms");
+        }
+
+        @Override
         public void onPlayerError(PlaybackException error) {
             if (player == null) return;
+            dbg("erro " + error.errorCode + ": " + error.getMessage());
             if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
                 player.seekToDefaultPosition();
                 player.prepare();
@@ -274,6 +295,13 @@ public class AspectPlayerPlugin extends Plugin {
                         .setConnectTimeoutMs(15000)
                         .setReadTimeoutMs(30000)
                         .setUserAgent(ua);
+                    DataSource.Factory src = new ResolvingDataSource.Factory(http, new ResolvingDataSource.Resolver() {
+                        @Override
+                        public DataSpec resolveDataSpec(DataSpec dataSpec) {
+                            dbg("pedido ao servidor: pos=" + dataSpec.position + " tam=" + dataSpec.length);
+                            return dataSpec;
+                        }
+                    });
                     DefaultRenderersFactory rf = new DefaultRenderersFactory(getContext()).setEnableDecoderFallback(true);
                     // buffer menor e limitado em bytes: a TV não fica sem memória nem trava ao coletar lixo
                     DefaultLoadControl.Builder lc = new DefaultLoadControl.Builder();
@@ -282,7 +310,7 @@ public class AspectPlayerPlugin extends Plugin {
                     lc.setTargetBufferBytes(48 * 1024 * 1024).setPrioritizeTimeOverSizeThresholds(false);
                     player = new ExoPlayer.Builder(getContext(), rf)
                         .setLoadControl(lc.build())
-                        .setMediaSourceFactory(new DefaultMediaSourceFactory(getContext()).setDataSourceFactory(http))
+                        .setMediaSourceFactory(new DefaultMediaSourceFactory(getContext()).setDataSourceFactory(src))
                         .setAudioAttributes(new AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
                         .setHandleAudioBecomingNoisy(true)
                         .build();
