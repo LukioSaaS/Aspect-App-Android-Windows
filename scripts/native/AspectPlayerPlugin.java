@@ -262,11 +262,18 @@ public class AspectPlayerPlugin extends Plugin {
                     release();
                     liveMode = live;
                     retries = 0;
+                    // mesmo User-Agent do navegador do app: alguns servidores só deixam pular no vídeo para ele
+                    String ua = null;
+                    try {
+                        ua = getBridge().getWebView().getSettings().getUserAgentString();
+                    } catch (Exception ignored) {
+                    }
+                    if (ua == null || ua.length() < 10) ua = "Mozilla/5.0 (Linux; Android) Aspect";
                     DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
                         .setAllowCrossProtocolRedirects(true)
                         .setConnectTimeoutMs(15000)
                         .setReadTimeoutMs(30000)
-                        .setUserAgent("Mozilla/5.0 (Linux; Android) Aspect");
+                        .setUserAgent(ua);
                     DefaultRenderersFactory rf = new DefaultRenderersFactory(getContext()).setEnableDecoderFallback(true);
                     // buffer menor e limitado em bytes: a TV não fica sem memória nem trava ao coletar lixo
                     DefaultLoadControl.Builder lc = new DefaultLoadControl.Builder();
